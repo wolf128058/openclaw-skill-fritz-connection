@@ -9,6 +9,11 @@
 
 Dieser OpenClaw-Skill ermöglicht die Abfrage von Statusinformationen und die Steuerung einer AVM FRITZ!Box über die TR-064 Schnittstelle.
 
+### 🔗 Repository
+
+Der Quellcode dieses Skills ist auf GitHub verfügbar:
+[wolf128058/openclaw-skill-fritz-connection](https://github.com/wolf128058/openclaw-skill-fritz-connection)
+
 ### 🚀 Features
 
 - **Status:** Modell, Uptime und Verbindungsstatus.
@@ -64,6 +69,11 @@ FRITZBOX_PASSWORD=dein_passwort
 ## English
 
 This OpenClaw skill allows you to monitor and control your AVM FRITZ!Box router via the TR-064 interface.
+
+### 🔗 Repository
+
+The source code for this skill is available on GitHub:
+[wolf128058/openclaw-skill-fritz-connection](https://github.com/wolf128058/openclaw-skill-fritz-connection)
 
 ### 🚀 Features
 

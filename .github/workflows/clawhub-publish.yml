@@ -1,0 +1,106 @@
+name: Publish skill to ClawHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 1.0.1"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clawhub-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    env:
+      SKILL_PATH: .
+      SKILL_SLUG: fritz-connection
+      SKILL_NAME: fritz-connection
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          VERSION="${{ github.event.inputs.version }}"
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Eingegebene Version ist keine brauchbare semver-nahe Version: '${VERSION}'" >&2
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate skill root
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          test -f "${SKILL_PATH}/SKILL.md"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install ClawHub CLI
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          npm install -g clawhub@latest
+          clawhub --cli-version
+
+      - name: Login to ClawHub
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          test -n "${CLAWHUB_TOKEN}"
+          clawhub login --token "${CLAWHUB_TOKEN}" --no-browser
+
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          mkdir -p stage
+          PUBLISH_DIR="stage/publish"
+          rm -rf "${PUBLISH_DIR}"
+          mkdir -p "${PUBLISH_DIR}"
+
+          # Nur die eigentlichen Skill-Dateien publizieren, keine Repo-Metadaten.
+          rsync -a \
+            --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'dist/' \
+            --exclude 'stage/' \
+            --exclude '.DS_Store' \
+            --exclude '.gitignore' \
+            --exclude 'LICENSE' \
+            "${SKILL_PATH}/" "${PUBLISH_DIR}/"
+
+          find "${PUBLISH_DIR}" -exec touch -t 198001010000 {} +
+
+          clawhub publish "${PUBLISH_DIR}" \
+            --slug "${SKILL_SLUG}" \
+            --name "${SKILL_NAME}" \
+            --version "${VERSION}" \
+            --changelog "Release ${VERSION} from manual GitHub Actions publish" \
+            --tags latest

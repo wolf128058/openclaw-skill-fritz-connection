@@ -1,0 +1,95 @@
+name: ClawHub dry-run bundle
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clawhub-dry-run-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+
+    env:
+      SKILL_PATH: .
+      SKILL_SLUG: fritz-connection
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          REF_NAME="${GITHUB_REF_NAME:-dev}"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${REF_NAME}" =~ ^v[0-9] ]]; then
+            VERSION="${REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev+${GITHUB_SHA::7}"
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate skill root
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          test -f "${SKILL_PATH}/SKILL.md"
+
+      - name: Build deterministic zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          mkdir -p dist stage
+          STAGE_DIR="stage/bundle"
+          rm -rf "${STAGE_DIR}"
+          mkdir -p "${STAGE_DIR}"
+
+          # Skill-Inhalt spiegeln, aber Repo-/Build-Artefakte ausschließen.
+          rsync -a \
+            --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'dist/' \
+            --exclude 'stage/' \
+            --exclude '.DS_Store' \
+            --exclude '.gitignore' \
+            --exclude 'LICENSE' \
+            "${SKILL_PATH}/" "${STAGE_DIR}/"
+
+          # ClawHub-nahe, reproduzierbare Timestamps setzen.
+          find "${STAGE_DIR}" -exec touch -t 198001010000 {} +
+
+          ZIP_NAME="${SKILL_SLUG}-${VERSION}.zip"
+          (
+            cd "${STAGE_DIR}"
+            find . -type f | sed 's#^\./##' | LC_ALL=C sort > ../../dist/filelist.txt
+            zip -X "../../dist/${ZIP_NAME}" -@ < ../../dist/filelist.txt
+          )
+
+          sha256sum "dist/${ZIP_NAME}" | tee "dist/${ZIP_NAME}.sha256"
+          unzip -l "dist/${ZIP_NAME}" > "dist/${ZIP_NAME}.contents.txt"
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-dry-run-bundle
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/*.contents.txt
+            dist/filelist.txt
